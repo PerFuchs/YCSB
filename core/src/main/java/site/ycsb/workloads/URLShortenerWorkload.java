@@ -407,7 +407,6 @@ public class URLShortenerWorkload extends Workload {
    * for each other, and it will be difficult to reach the target throughput. Ideally, this function would
    * have no side effects other than DB operations.
    */
-  // TODO make single threaded
   @Override
   public boolean doInsert(DB db, Object threadstate) {
     int keynum = keysequence.nextValue().intValue();
