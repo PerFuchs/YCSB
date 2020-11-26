@@ -1,0 +1,15 @@
+
+recordcount=20
+operationcount=20
+workload=site.ycsb.workloads.URLShortenerWorkload
+
+fieldlength=8
+fieldcount=1
+
+readproportion=0.9
+insertproportion=0.1
+
+insertorder=ordered
+
+requestdistribution=zipfian
+
