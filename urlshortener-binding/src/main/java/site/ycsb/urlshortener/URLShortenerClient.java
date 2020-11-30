@@ -44,7 +44,9 @@ public class URLShortenerClient extends DB {
   private static final String HEADERS = "headers";
   private boolean logEnabled;
 
-  private String urlPrefix;
+  private List<String> servers;
+  private int targetServer = 0;
+
   private Properties props;
   private String[] headers;
   private CloseableHttpClient client;
@@ -56,7 +58,11 @@ public class URLShortenerClient extends DB {
   @Override
   public void init() throws DBException {
     props = getProperties();
-    urlPrefix = props.getProperty("url.prefix", "http://127.0.0.1:8080");
+
+    String serverString = props.getProperty("url.prefix", "http://127.0.0.1:8080/");
+
+    servers = Arrays.asList(serverString.split(","));
+
     conTimeout = Integer.valueOf(props.getProperty(CON_TIMEOUT, "10")) * 1000;
     readTimeout = Integer.valueOf(props.getProperty(READ_TIMEOUT, "10")) * 1000;
     execTimeout = Integer.valueOf(props.getProperty(EXEC_TIMEOUT, "10")) * 1000;
@@ -75,20 +81,25 @@ public class URLShortenerClient extends DB {
     this.client = clientBuilder.setConnectionManagerShared(true).build();
   }
 
+  private String getTargetServer() {
+    targetServer = (targetServer + 1) % servers.size();
+    return servers.get(targetServer);
+  }
+
   @Override
   public Status read(String table, String endpoint, Set<String> fields, Map<String, ByteIterator> result) {
     int responseCode;
     try {
       Map<String, ByteIterator> httpResponse = new HashMap<>();
-      responseCode = httpGet(urlPrefix + endpoint, httpResponse);
+      responseCode = httpGet(getTargetServer() + endpoint, httpResponse);
       if (responseCode == 200) {
         result.put("url", httpResponse.get("response"));
       }
     } catch (Exception e) {
-      responseCode = handleExceptions(e, urlPrefix + endpoint, HttpMethod.GET);
+      responseCode = handleExceptions(e, servers + endpoint, HttpMethod.GET);
     }
     if (logEnabled) {
-      System.err.println(new StringBuilder("GET Request: ").append(urlPrefix).append(endpoint).append(" | Response Code: ").append(responseCode).toString());
+      System.err.println(new StringBuilder("GET Request: ").append(servers).append(endpoint).append(" | Response Code: ").append(responseCode).toString());
     }
     return getStatus(responseCode);
   }
@@ -97,12 +108,12 @@ public class URLShortenerClient extends DB {
   public Status insert(String table, String endpoint, Map<String, ByteIterator> values) {
     int responseCode;
     try {
-      responseCode = httpExecute(new HttpPost(urlPrefix + endpoint), values.get("url").toString());
+      responseCode = httpExecute(new HttpPost(getTargetServer()), values.get("url").toString());
     } catch (Exception e) {
-      responseCode = handleExceptions(e, urlPrefix + endpoint, HttpMethod.POST);
+      responseCode = handleExceptions(e, servers + endpoint, HttpMethod.POST);
     }
     if (logEnabled) {
-      System.err.println(new StringBuilder("POST Request: ").append(urlPrefix).append(endpoint).append(" | Response Code: ").append(responseCode).toString());
+      System.err.println(new StringBuilder("POST Request: ").append(servers).append(endpoint).append(" | Response Code: ").append(responseCode).toString());
     }
     return getStatus(responseCode);
   }
@@ -209,6 +220,7 @@ public class URLShortenerClient extends DB {
     CloseableHttpResponse response = client.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
     HttpEntity responseEntity = response.getEntity();
+
     // If null entity don't bother about connection release.
     if (responseEntity != null) {
       InputStream stream = responseEntity.getContent();
