@@ -235,9 +235,9 @@ public class URLShortenerWorkload extends Workload {
     return key.substring(KEY_LENGTH);
   }
 
-  // TODO generate realistic timestamps
   private String getTimestamp() {
-    return  new Timestamp(System.currentTimeMillis()).toString();
+    int fiveYears = 1000 * 60 * 60 * 24 * 365 * 5;
+    return new Timestamp(System.currentTimeMillis() + fiveYears).toString();
   }
 
   /**
