@@ -119,6 +119,7 @@ LICENSE file.
     <!-- all the datastore bindings, lex sorted please -->
     <module>rest</module>
     <module>csv-binding</module>
+    <module>urlshortener-binding</module>
   </modules>
 
   <build>
