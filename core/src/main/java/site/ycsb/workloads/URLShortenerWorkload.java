@@ -21,7 +21,6 @@ import site.ycsb.*;
 import site.ycsb.generator.*;
 import site.ycsb.measurements.Measurements;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -126,9 +125,14 @@ public class URLShortenerWorkload extends Workload {
 
   public static final String TIMESTAMP_FIELD_NAME = "expires";
 
-  public static final int KEY_LENGTH = 6;
+  public static final String KEY_LENGTH_PROPERTY = "key_length";
+  public static final String URL_LENGTH_PROPERTY = "url_length";
 
-  public static final int URL_LENGTH = 30;
+  public static final String KEY_LENGTH_DEFAULT = "6";
+  public static final String URL_LENGTH_DEFAULT = "20";
+
+  protected int keyLength;
+  protected int urlLength;
 
   protected NumberGenerator keysequence;
   protected DiscreteGenerator operationchooser;
@@ -210,6 +214,13 @@ public class URLShortenerWorkload extends Workload {
       throw new WorkloadException("Unknown request distribution \"" + requestdistrib + "\"");
     }
 
+    keyLength = Integer.parseInt(p.getProperty(KEY_LENGTH_PROPERTY, KEY_LENGTH_DEFAULT));
+    urlLength = Integer.parseInt(p.getProperty(URL_LENGTH_PROPERTY, URL_LENGTH_DEFAULT));
+
+    if (22 < urlLength) {
+      throw new WorkloadException("Cannot provide urls longer than 21 characters currently.");
+    }
+
     try {
       md5 = MessageDigest.getInstance("MD5");
     } catch (NoSuchAlgorithmException e) {
@@ -226,13 +237,13 @@ public class URLShortenerWorkload extends Workload {
   private String getURL(long keynum) {
     byte[] hash = md5.digest(longToBytes(keynum));
     String key = Base64.getEncoder().encodeToString(hash);
-    return key.substring(URL_LENGTH);  // TODO check url length to be smaller than md5 hash
+    return key.substring(urlLength);  // TODO check url length to be smaller than md5 hash
   }
 
   private String getKey(String url) {
     byte[] hash = md5.digest(url.getBytes());
     String key = Base64.getEncoder().encodeToString(hash);
-    return key.substring(KEY_LENGTH);
+    return key.substring(keyLength);
   }
 
   private String getTimestamp() {
