@@ -31,8 +31,6 @@ import java.util.*;
 /**
  * Properties to control the client:
  * <UL>
- * <LI><b>fieldlength</b>: the size of each field (default: 100)
- * <LI><b>minfieldlength</b>: the minimum size of each field (default: 1)
  * <LI><b>readproportion</b>: what proportion of operations should be reads (default: 0.99)
  * <LI><b>insertproportion</b>: what proportion of operations should be inserts (default: 0.01)
  * <LI><b>requestdistribution</b>: what distribution should be used to select the records to operate
@@ -41,8 +39,6 @@ import java.util.*;
  * YCSB instance (default: 0)
  * <LI><b>insertcount</b>: for parallel loads and runs, defines the number of records for this
  * YCSB instance (default: recordcount)
- * <LI><b>insertorder</b>: should records be inserted in order by key ("ordered"), or in hashed
- * order ("hashed") (default: hashed)
  * </ul>
  */
 public class URLShortenerWorkload extends Workload {
@@ -57,60 +53,6 @@ public class URLShortenerWorkload extends Workload {
   public static final String TABLENAME_PROPERTY_DEFAULT = "aliases";
 
   protected String table;
-
-  private List<String> fieldnames;
-
-  /**
-   * The name of the property for the field length distribution. Options are "uniform", "zipfian"
-   * (favouring short records), "constant", and "histogram".
-   * <p>
-   * If "uniform", "zipfian" or "constant", the maximum field length will be that specified by the
-   * fieldlength property. If "histogram", then the histogram will be read from the filename
-   * specified in the "fieldlengthhistogram" property.
-   */
-  public static final String FIELD_LENGTH_DISTRIBUTION_PROPERTY = "fieldlengthdistribution";
-
-  /**
-   * The default field length distribution.
-   */
-  public static final String FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT = "constant";
-
-  /**
-   * The name of the property for the length of a field in bytes.
-   */
-  public static final String FIELD_LENGTH_PROPERTY = "fieldlength";
-
-  /**
-   * The default maximum length of a field in bytes.
-   */
-  public static final String FIELD_LENGTH_PROPERTY_DEFAULT = "100";
-
-  /**
-   * The name of the property for the minimum length of a field in bytes.
-   */
-  public static final String MIN_FIELD_LENGTH_PROPERTY = "minfieldlength";
-
-  /**
-   * The default minimum length of a field in bytes.
-   */
-  public static final String MIN_FIELD_LENGTH_PROPERTY_DEFAULT = "1";
-
-  /**
-   * The name of a property that specifies the filename containing the field length histogram (only
-   * used if fieldlengthdistribution is "histogram").
-   */
-  public static final String FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY = "fieldlengthhistogram";
-
-  /**
-   * The default filename containing a field length histogram.
-   */
-  public static final String FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY_DEFAULT = "hist.txt";
-
-  /**
-   * Generator object that produces field lengths.  The value of this depends on the properties that
-   * start with "FIELD_LENGTH_".
-   */
-  protected NumberGenerator fieldlengthgenerator;
 
   /**
    * The name of the property for deciding whether to check all returned
@@ -161,16 +103,6 @@ public class URLShortenerWorkload extends Workload {
   public static final String REQUEST_DISTRIBUTION_PROPERTY_DEFAULT = "zipfian";
 
   /**
-   * The name of the property for the order to insert records. Options are "ordered" or "hashed"
-   */
-  public static final String INSERT_ORDER_PROPERTY = "insertorder";
-
-  /**
-   * Default insert order.
-   */
-  public static final String INSERT_ORDER_PROPERTY_DEFAULT = "hashed";
-
-  /**
    * Percentage data items that constitute the hot set.
    */
   public static final String HOTSPOT_DATA_FRACTION = "hotspotdatafraction";
@@ -196,46 +128,17 @@ public class URLShortenerWorkload extends Workload {
 
   public static final int KEY_LENGTH = 6;
 
+  public static final int URL_LENGTH = 30;
+
   protected NumberGenerator keysequence;
   protected DiscreteGenerator operationchooser;
   protected NumberGenerator keychooser;
-  protected NumberGenerator fieldchooser;
   protected AcknowledgedCounterGenerator transactioninsertkeysequence;
-  protected boolean orderedinserts;
-  protected long fieldcount;
   protected long recordcount;
 
   private Measurements measurements = Measurements.getMeasurements();
 
-  protected static NumberGenerator getFieldLengthGenerator(Properties p) throws WorkloadException {
-    NumberGenerator fieldlengthgenerator;
-    String fieldlengthdistribution = p.getProperty(
-        FIELD_LENGTH_DISTRIBUTION_PROPERTY, FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT);
-    int fieldlength =
-        Integer.parseInt(p.getProperty(FIELD_LENGTH_PROPERTY, FIELD_LENGTH_PROPERTY_DEFAULT));
-    int minfieldlength =
-        Integer.parseInt(p.getProperty(MIN_FIELD_LENGTH_PROPERTY, MIN_FIELD_LENGTH_PROPERTY_DEFAULT));
-    String fieldlengthhistogram = p.getProperty(
-        FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY, FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY_DEFAULT);
-    if (fieldlengthdistribution.compareTo("constant") == 0) {
-      fieldlengthgenerator = new ConstantIntegerGenerator(fieldlength);
-    } else if (fieldlengthdistribution.compareTo("uniform") == 0) {
-      fieldlengthgenerator = new UniformLongGenerator(minfieldlength, fieldlength);
-    } else if (fieldlengthdistribution.compareTo("zipfian") == 0) {
-      fieldlengthgenerator = new ZipfianGenerator(minfieldlength, fieldlength);
-    } else if (fieldlengthdistribution.compareTo("histogram") == 0) {
-      try {
-        fieldlengthgenerator = new HistogramGenerator(fieldlengthhistogram);
-      } catch (IOException e) {
-        throw new WorkloadException(
-            "Couldn't read field length histogram file: " + fieldlengthhistogram, e);
-      }
-    } else {
-      throw new WorkloadException(
-          "Unknown field length distribution \"" + fieldlengthdistribution + "\"");
-    }
-    return fieldlengthgenerator;
-  }
+  private MessageDigest md5;
 
   /**
    * Initialize the scenario.
@@ -245,24 +148,14 @@ public class URLShortenerWorkload extends Workload {
   public void init(Properties p) throws WorkloadException {
     table = p.getProperty(TABLENAME_PROPERTY, TABLENAME_PROPERTY_DEFAULT);
 
-    fieldnames = new ArrayList<>();
-    fieldnames.add(URL_FIELD_NAME);
-    fieldnames.add(TIMESTAMP_FIELD_NAME);
-
-    fieldlengthgenerator = URLShortenerWorkload.getFieldLengthGenerator(p);
-
-    recordcount =
-        Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
+    recordcount = Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
     if (recordcount == 0) {
       recordcount = Integer.MAX_VALUE;
     }
-    String requestdistrib =
-        p.getProperty(REQUEST_DISTRIBUTION_PROPERTY, REQUEST_DISTRIBUTION_PROPERTY_DEFAULT);
+    String requestdistrib = p.getProperty(REQUEST_DISTRIBUTION_PROPERTY, REQUEST_DISTRIBUTION_PROPERTY_DEFAULT);
 
-    long insertstart =
-        Long.parseLong(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
-    long insertcount=
-        Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - insertstart)));
+    long insertstart = Long.parseLong(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
+    long insertcount= Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - insertstart)));
     // Confirm valid values for insertstart and insertcount in relation to recordcount
     if (recordcount < (insertstart + insertcount)) {
       System.err.println("Invalid combination of insertstart, insertcount and recordcount.");
@@ -270,27 +163,12 @@ public class URLShortenerWorkload extends Workload {
       System.exit(-1);
     }
 
-    dataintegrity = Boolean.parseBoolean(
-        p.getProperty(DATA_INTEGRITY_PROPERTY, DATA_INTEGRITY_PROPERTY_DEFAULT));
-    // Confirm that fieldlengthgenerator returns a constant if data
-    // integrity check requested.
-    if (dataintegrity && !(p.getProperty(
-        FIELD_LENGTH_DISTRIBUTION_PROPERTY,
-        FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT)).equals("constant")) {
-      System.err.println("Must have constant field size to check data integrity.");
-      System.exit(-1);
-    }
-
-    if (p.getProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_PROPERTY_DEFAULT).compareTo("hashed") == 0) {
-      orderedinserts = false;
-    } else {
-      orderedinserts = true;
-    }
+    dataintegrity = Boolean.parseBoolean(p.getProperty(DATA_INTEGRITY_PROPERTY, DATA_INTEGRITY_PROPERTY_DEFAULT));
 
     keysequence = new CounterGenerator(insertstart);
     operationchooser = createOperationGenerator(p);
-
     transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
+
     if (requestdistrib.compareTo("uniform") == 0) {
       keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
     } else if (requestdistrib.compareTo("exponential") == 0) {
@@ -332,7 +210,11 @@ public class URLShortenerWorkload extends Workload {
       throw new WorkloadException("Unknown request distribution \"" + requestdistrib + "\"");
     }
 
-    fieldchooser = new UniformLongGenerator(0, fieldcount - 1);
+    try {
+      md5 = MessageDigest.getInstance("MD5");
+    } catch (NoSuchAlgorithmException e) {
+      throw new RuntimeException("Needs MD5 hash to be available.");
+    }
   }
 
   private byte[] longToBytes(long x) {
@@ -341,64 +223,21 @@ public class URLShortenerWorkload extends Workload {
     return buffer.array();
   }
 
-  protected String buildKeyName(long keynum) {
-    String value = Long.toString(keynum);
-    if (!orderedinserts) {
-      try {
-        MessageDigest md5 = MessageDigest.getInstance("MD5");
-        byte[] hash = md5.digest(longToBytes(keynum));
-
-        String key = Base64.getEncoder().encodeToString(hash);
-        value = key.substring(KEY_LENGTH);
-      } catch (NoSuchAlgorithmException e) {
-        throw new RuntimeException("Needs MD5 hash installed.");
-      }
-    }
-    return value;
+  private String getURL(long keynum) {
+    byte[] hash = md5.digest(longToBytes(keynum));
+    String key = Base64.getEncoder().encodeToString(hash);
+    return key.substring(URL_LENGTH);  // TODO check url length to be smaller than md5 hash
   }
 
-  /**
-   * Builds values for all fields.
-   */
-  private HashMap<String, ByteIterator> buildValues(String key) {
-    HashMap<String, ByteIterator> values = new HashMap<>();
-
-    for (String fieldkey : fieldnames) {
-      ByteIterator data;
-
-      if (fieldkey == TIMESTAMP_FIELD_NAME) {
-        // TODO generate timestamps correctly
-        data = new StringByteIterator(new Timestamp(System.currentTimeMillis()).toString());
-      } else {
-        if (dataintegrity) {
-          data = new StringByteIterator(buildDeterministicValue(key, fieldkey));
-        } else {
-          // fill with random data
-          data = new RandomByteIterator(fieldlengthgenerator.nextValue().longValue());
-        }
-      }
-
-      values.put(fieldkey, data);
-    }
-    return values;
+  private String getKey(String url) {
+    byte[] hash = md5.digest(url.getBytes());
+    String key = Base64.getEncoder().encodeToString(hash);
+    return key.substring(KEY_LENGTH);
   }
 
-  /**
-   * Build a deterministic value given the key information.
-   */
-  private String buildDeterministicValue(String key, String fieldkey) {
-    int size = fieldlengthgenerator.nextValue().intValue();
-    StringBuilder sb = new StringBuilder(size);
-    sb.append(key);
-    sb.append(':');
-    sb.append(fieldkey);
-    while (sb.length() < size) {
-      sb.append(':');
-      sb.append(sb.toString().hashCode());
-    }
-    sb.setLength(size);
-
-    return sb.toString();
+  // TODO generate realistic timestamps
+  private String getTimestamp() {
+    return  new Timestamp(System.currentTimeMillis()).toString();
   }
 
   /**
@@ -410,10 +249,15 @@ public class URLShortenerWorkload extends Workload {
   @Override
   public boolean doInsert(DB db, Object threadstate) {
     int keynum = keysequence.nextValue().intValue();
-    String dbkey = buildKeyName(keynum);
-    HashMap<String, ByteIterator> values = buildValues(dbkey);
+    String url = getURL(keynum);
+    String key = getKey(url);
+    String timestamp = getTimestamp();
 
-    Status status = db.insert(table, dbkey, values);
+    Map<String, ByteIterator> values = new HashMap<>();
+    values.put(URL_FIELD_NAME, new StringByteIterator(url));
+    values.put(TIMESTAMP_FIELD_NAME, new StringByteIterator(timestamp));
+
+    Status status = db.insert(table, key, values);
     if (status == null || !status.isOk()) {
       System.err.println("Error inserting");
     }
@@ -446,26 +290,16 @@ public class URLShortenerWorkload extends Workload {
     return true;
   }
 
-  /**
-   * Results are reported in the first three buckets of the histogram under
-   * the label "VERIFY".
-   * Bucket 0 means the expected data was returned.
-   * Bucket 1 means incorrect data was returned.
-   * Bucket 2 means null data was returned when some data was expected.
-   */
   protected void verifyRow(String key, HashMap<String, ByteIterator> cells) {
     Status verifyStatus = Status.OK;
     long startTime = System.nanoTime();
-    if (!cells.isEmpty()) {
-      for (Map.Entry<String, ByteIterator> entry : cells.entrySet()) {
-        if (!entry.getValue().toString().equals(buildDeterministicValue(key, entry.getKey()))) {
-          verifyStatus = Status.UNEXPECTED_STATE;
-          break;
-        }
+    if (cells.containsKey(URL_FIELD_NAME)) {
+      String expectedKey = getKey(cells.get(URL_FIELD_NAME).toString());
+      if (!expectedKey.equals(key)) {
+        verifyStatus = Status.UNEXPECTED_STATE;
       }
     } else {
-      // This assumes that null data is never valid
-      verifyStatus = Status.ERROR;
+      verifyStatus = Status.NOT_FOUND;
     }
     long endTime = System.nanoTime();
     measurements.measure("VERIFY", (int) (endTime - startTime) / 1000);
@@ -489,11 +323,10 @@ public class URLShortenerWorkload extends Workload {
   public void doTransactionRead(DB db) {
     // choose a random key
     long keynum = nextKeynum();
-    String keyname = buildKeyName(keynum);
+    String url = getURL(keynum);
+    String keyname = getKey(url);
 
     HashSet<String> fields = null;
-
-
     if (dataintegrity) {
       fields = new HashSet<String>();
       fields.add(URL_FIELD_NAME);
@@ -508,13 +341,15 @@ public class URLShortenerWorkload extends Workload {
   }
 
   public void doTransactionInsert(DB db) {
-    // choose the next key
     long keynum = transactioninsertkeysequence.nextValue();
 
     try {
-      String dbkey = buildKeyName(keynum);
+      String url = getURL(keynum);
+      String dbkey = getKey(url);
 
-      HashMap<String, ByteIterator> values = buildValues(dbkey);
+      Map<String, ByteIterator> values = new HashMap<>();
+      values.put(URL_FIELD_NAME, new StringByteIterator(url));
+
       db.insert(table, dbkey, values);
     } finally {
       transactioninsertkeysequence.acknowledge(keynum);
