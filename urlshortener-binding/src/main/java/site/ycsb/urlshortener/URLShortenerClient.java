@@ -60,6 +60,7 @@ public class URLShortenerClient extends DB {
     props = getProperties();
 
     String serverString = props.getProperty("url.prefix", "http://127.0.0.1:8080/");
+    System.out.println("Connecting to the following servers: " + serverString);
 
     servers = Arrays.asList(serverString.split(","));
 
@@ -89,9 +90,10 @@ public class URLShortenerClient extends DB {
   @Override
   public Status read(String table, String endpoint, Set<String> fields, Map<String, ByteIterator> result) {
     int responseCode;
+    String target_server = getTargetServer();
     try {
       Map<String, ByteIterator> httpResponse = new HashMap<>();
-      responseCode = httpGet(getTargetServer() + endpoint, httpResponse);
+      responseCode = httpGet(target_server + endpoint, httpResponse);
       if (responseCode == 200) {
         result.put("url", httpResponse.get("response"));
       }
@@ -99,7 +101,7 @@ public class URLShortenerClient extends DB {
       responseCode = handleExceptions(e, servers + endpoint, HttpMethod.GET);
     }
     if (logEnabled) {
-      System.err.println(new StringBuilder("GET Request: ").append(servers).append(endpoint).append(" | Response Code: ").append(responseCode).toString());
+      System.err.println(new StringBuilder("GET Request: ").append(target_server).append(endpoint).append(" | Response Code: ").append(responseCode).toString());
     }
     return getStatus(responseCode);
   }
@@ -107,13 +109,15 @@ public class URLShortenerClient extends DB {
   @Override
   public Status insert(String table, String endpoint, Map<String, ByteIterator> values) {
     int responseCode;
+    String target_server = getTargetServer();
     try {
-      responseCode = httpExecute(new HttpPost(getTargetServer()), values.get("url").toString());
+      responseCode = httpExecute(new HttpPost(target_server), values.get("url").toString());
     } catch (Exception e) {
-      responseCode = handleExceptions(e, servers + endpoint, HttpMethod.POST);
+      System.out.println("Invalid post ");
+      responseCode = handleExceptions(e, target_server, HttpMethod.POST);
     }
     if (logEnabled) {
-      System.err.println(new StringBuilder("POST Request: ").append(servers).append(endpoint).append(" | Response Code: ").append(responseCode).toString());
+      System.err.println(new StringBuilder("POST Request: ").append(target_server).append(" | Response Code: ").append(responseCode).toString());
     }
     return getStatus(responseCode);
   }
