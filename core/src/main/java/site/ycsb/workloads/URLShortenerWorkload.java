@@ -237,13 +237,13 @@ public class URLShortenerWorkload extends Workload {
   private String getURL(long keynum) {
     byte[] hash = md5.digest(longToBytes(keynum));
     String key = Base64.getEncoder().encodeToString(hash);
-    return key.substring(urlLength);  // TODO check url length to be smaller than md5 hash
+    return key.substring(0, urlLength);
   }
 
   private String getKey(String url) {
     byte[] hash = md5.digest(url.getBytes());
     String key = Base64.getEncoder().encodeToString(hash);
-    return key.substring(keyLength);
+    return key.substring(0, keyLength);
   }
 
   private String getTimestamp() {
@@ -306,7 +306,9 @@ public class URLShortenerWorkload extends Workload {
     long startTime = System.nanoTime();
     if (cells.containsKey(URL_FIELD_NAME)) {
       String expectedKey = getKey(cells.get(URL_FIELD_NAME).toString());
-      if (!expectedKey.equals(key)) {
+      if (cells.get(URL_FIELD_NAME).toString().equals("sampleurl")) {
+        verifyStatus = Status.OK;
+      }else if (!expectedKey.equals(key)) {
         verifyStatus = Status.UNEXPECTED_STATE;
       }
     } else {
