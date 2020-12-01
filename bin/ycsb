@@ -103,8 +103,8 @@ DATABASES = {
     "solr7"        : "site.ycsb.db.solr7.SolrClient",
     "tarantool"    : "site.ycsb.db.TarantoolClient",
     "tablestore"   : "site.ycsb.db.tablestore.TableStoreClient",
-    "csv-binding"  : "site.ycsb.csv.CSVClient",
-    "urlshortener-binding": "site.ycsb.urlshortener.URLShortenerClient"
+    "csv"  : "site.ycsb.csv.CSVClient",
+    "urlshortener": "site.ycsb.urlshortener.URLShortenerClient"
 }
 
 OPTIONS = {

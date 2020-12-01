@@ -117,9 +117,8 @@ LICENSE file.
     <module>binding-parent</module>
     <module>distribution</module>
     <!-- all the datastore bindings, lex sorted please -->
-    <module>rest</module>
-    <module>csv-binding</module>
-    <module>urlshortener-binding</module>
+    <module>csv</module>
+    <module>urlshortener</module>
   </modules>
 
   <build>
